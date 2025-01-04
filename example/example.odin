@@ -7,10 +7,7 @@ import "core:fmt"
 import "core:slice"
 print :: fmt.println
 space_print :: proc(args: ..any) {
-	print("\n")
-	print(..args)
-	print("\n")
-
+	print("\n");print(..args);print("\n")
 }
 
 IVec2 :: [2]int
@@ -55,21 +52,15 @@ positions_drop :: proc(this: ^Positions) {
 }
 
 main :: proc() {
-	// /////////////////////////////////////////////////////////////////////////////
-	// Setup: 
-
 	state: State
-	h: history.MultiHistory // will track changes for world, players and positions
-
+	// create new history saving the last 3 snapshotted states.
+	h: history.MultiHistory = history.multi_history_create(3)
 	// add tracks with dedicated clone/drop functions for players and positions
-	history.multi_history_add_track(&h, Players, players_clone, players_drop)
-	history.multi_history_add_track(&h, Positions, positions_clone, positions_drop)
-	// add track for plain old data type World :: [4][4]Tile
-	history.multi_history_add_track(&h, World)
-	// multi_history_initialize allocated the backing buffers, specifying max 3 undo steps
-	history.multi_history_initialize(&h, 3)
+	history.multi_history_add_type(&h, Players, players_clone, players_drop)
+	history.multi_history_add_type(&h, Positions, positions_clone, positions_drop)
+	// add track for plain old data type World :: enum {Europe, Asia, America}
+	history.multi_history_add_type(&h, World)
 
-	// /////////////////////////////////////////////////////////////////////////////
 	// Modify the state, by adding 5 waiting players:
 	space_print("Add 5 waiting players:")
 	for player_id in ([]PlayerId{101, 102, 103, 104, 105}) {
@@ -113,7 +104,6 @@ main :: proc() {
 		print("      state: ", state)
 	}
 
-
 	// modify players and player positions at the same time:
 	space_print("Now we move player 103 to ingame and set his position to {7,7}")
 	print("    history.multi_history_snapshot")
@@ -124,7 +114,7 @@ main :: proc() {
 	state.positions[player_103] = {7, 7}
 	print("      state: ", state)
 	space_print(
-		"Note the drop calls throwing away the 2 future states that were created by the last 2 undos\nNow set the world to Asia 5 times:",
+		"Note the drop calls throwing away the 2 future states that were created by the last 2 undos\nNow set the world to Asia 5 times.",
 	)
 	for i in 0 ..< 5 {
 		print("    history.multi_history_snapshot")
@@ -132,6 +122,4 @@ main :: proc() {
 		state.world = .Asia
 		print("      state: ", state)
 	}
-
-
 }
