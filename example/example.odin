@@ -51,21 +51,26 @@ positions_drop :: proc(this: ^Positions) {
 	delete(this^)
 }
 
+add_type :: history.multi_history_add_type
+snapshot :: history.multi_history_snapshot
+undo :: history.multi_history_undo
+redo :: history.multi_history_redo
+
 main :: proc() {
 	state: State
 	// create new history saving the last 3 snapshotted states.
 	h: history.MultiHistory = history.multi_history_create(3)
 	// add tracks with dedicated clone/drop functions for players and positions
-	history.multi_history_add_type(&h, Players, players_clone, players_drop)
-	history.multi_history_add_type(&h, Positions, positions_clone, positions_drop)
+	add_type(&h, Players, players_clone, players_drop)
+	add_type(&h, Positions, positions_clone, positions_drop)
 	// add track for plain old data type World :: enum {Europe, Asia, America}
-	history.multi_history_add_type(&h, World)
+	add_type(&h, World)
 
 	// Modify the state, by adding 5 waiting players:
 	space_print("Add 5 waiting players:")
 	for player_id in ([]PlayerId{101, 102, 103, 104, 105}) {
-		print("    history.multi_history_snapshot")
-		history.multi_history_snapshot(&h, state.players)
+		print("    snapshot")
+		snapshot(&h, state.players)
 		append(&state.players.waiting, player_id)
 		print("      state: ", state)
 	}
@@ -74,8 +79,8 @@ main :: proc() {
 	)
 	for _ in 0 ..< 5 {
 		// here you have to provide all states tracked by the multi-history
-		print("    history.multi_history_undo")
-		success := history.multi_history_undo(&h, &state.players, &state.positions, &state.world)
+		print("    undo")
+		success := undo(&h, &state.players, &state.positions, &state.world)
 		print("    success:", success)
 		print("      state: ", state)
 	}
@@ -85,29 +90,29 @@ main :: proc() {
 	)
 	// redo all 3 saved past states to get up to our 5 players:
 	for _ in 0 ..< 3 {
-		print("    history.multi_history_redo")
-		success := history.multi_history_redo(&h, &state.players, &state.positions, &state.world)
+		print("    redo")
+		success := redo(&h, &state.players, &state.positions, &state.world)
 		assert(success)
 		print("      state: ", state)
 	}
 	assert(len(state.players.waiting) == 5)
 	// this should only be possible 3 times, the 4th time would fail:
-	assert(!history.multi_history_redo(&h, &state.players, &state.positions, &state.world))
+	assert(!redo(&h, &state.players, &state.positions, &state.world))
 
 	space_print(
 		"This worked we are back up to our 5 waiting players. Lets undo 2 times to get back down to 3 players, such that we can see how another snapshot discards the future afterwards",
 	)
 	for _ in 0 ..< 2 {
-		print("    history.multi_history_undo")
-		success := history.multi_history_undo(&h, &state.players, &state.positions, &state.world)
+		print("    undo")
+		success := undo(&h, &state.players, &state.positions, &state.world)
 		assert(success)
 		print("      state: ", state)
 	}
 
 	// modify players and player positions at the same time:
 	space_print("Now we move player 103 to ingame and set his position to {7,7}")
-	print("    history.multi_history_snapshot")
-	history.multi_history_snapshot(&h, state.players, state.positions)
+	print("    snapshot")
+	snapshot(&h, state.players, state.positions)
 	player_103 := pop(&state.players.waiting)
 	assert(player_103 == 103)
 	append(&state.players.ingame, player_103)
@@ -117,8 +122,8 @@ main :: proc() {
 		"Note the drop calls throwing away the 2 future states that were created by the last 2 undos\nNow set the world to Asia 5 times.",
 	)
 	for i in 0 ..< 5 {
-		print("    history.multi_history_snapshot")
-		history.multi_history_snapshot(&h, state.world)
+		print("    snapshot")
+		snapshot(&h, state.world)
 		state.world = .Asia
 		print("      state: ", state)
 	}
