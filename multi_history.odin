@@ -3,6 +3,7 @@ package history
 import "core:fmt"
 import "core:mem"
 import "core:slice"
+import "core:strings"
 print :: fmt.println
 tprint :: fmt.tprint
 
@@ -31,6 +32,7 @@ _Snapshot :: struct {
 	bit_mask:   u64,
 	total_size: int, // size of allocation at ptr
 	alloc_ptr:  rawptr,
+	label:      Maybe(string),
 }
 _Mapping :: struct {
 	ty:       ^_Type,
@@ -69,7 +71,7 @@ _make_mappings :: proc(
 	return mappings, bit_mask, total_size
 }
 // values are direct values made into anys, such that any.data is assumed to be ^T
-_snapshot_create :: proc(types: []_Type, value_anys: []any) -> _Snapshot {
+_snapshot_create :: proc(types: []_Type, value_anys: []any, label: Maybe(string)) -> _Snapshot {
 	mappings, bit_mask, total_size := _make_mappings(types, value_anys)
 	defer delete(mappings)
 	alloc_ptr, err := mem.alloc(total_size)
@@ -91,7 +93,11 @@ _snapshot_create :: proc(types: []_Type, value_anys: []any) -> _Snapshot {
 		// increment cur_ptr by size of this type to get the next slot
 		cur_ptr = rawptr(uintptr(cur_ptr) + uintptr(m.ty.size))
 	}
-	return _Snapshot{bit_mask, total_size, alloc_ptr}
+	label_owned: Maybe(string)
+	if label, ok := label.(string); ok {
+		label_owned = strings.clone(label)
+	}
+	return _Snapshot{bit_mask, total_size, alloc_ptr, label_owned}
 }
 _snapshot_drop :: proc(this: ^_Snapshot, types: []_Type) {
 	iter := _iter(this, types)
@@ -103,7 +109,10 @@ _snapshot_drop :: proc(this: ^_Snapshot, types: []_Type) {
 	}
 	// in the end dealloc the allocation:
 	mem.free(this.alloc_ptr)
-	this^ = _Snapshot{0, 0, nil} // zero out memory
+	if label, ok := this.label.(string); ok {
+		delete(label)
+	}
+	this^ = _Snapshot{} // zero out memory
 }
 _access_types :: proc(this: ^MultiHistory) -> []_Type {
 	return this.types[:this.types_len]
@@ -171,7 +180,15 @@ multi_history_drop :: proc(this: ^MultiHistory) {
 	_drop_range(this, this.first_past_idx, this.past_len + this.future_len)
 }
 // Note: call with values directly, e.g. multi_history_snapshot(&h, players, world)
-multi_history_snapshot :: proc(this: ^MultiHistory, value_anys: ..any) {
+multi_history_snapshot :: proc(
+	this: ^MultiHistory,
+	value_anys: ..any,
+	label: Maybe(string) = nil,
+) {
+	when ODIN_DEBUG {
+		print("snapshot", label)
+	}
+
 	assert(_anys_are_unique(value_anys))
 
 	// remove the future when snapshot, such that redo is not possible anymore
@@ -189,7 +206,7 @@ multi_history_snapshot :: proc(this: ^MultiHistory, value_anys: ..any) {
 	}
 
 	assert(slot.alloc_ptr == nil)
-	slot^ = _snapshot_create(types, value_anys)
+	slot^ = _snapshot_create(types, value_anys, label)
 }
 // Note: call with pointers to values, e.g. multi_history_snapshot(&h, &players, &world), ptrs can be in any order, but need to be present for any type that could have been saved in snapshots
 multi_history_undo :: proc(this: ^MultiHistory, value_ptr_anys: ..any) -> (success: bool) {
@@ -198,6 +215,9 @@ multi_history_undo :: proc(this: ^MultiHistory, value_ptr_anys: ..any) -> (succe
 	this.past_len -= 1
 	this.future_len += 1
 	snapshot := &this.snapshots[(this.first_past_idx + this.past_len) % this.cap]
+	when ODIN_DEBUG {
+		print("undo", snapshot.label)
+	}
 	_snapshot_swap_with_state(snapshot, _access_types(this), value_ptr_anys)
 	return true
 }
@@ -206,6 +226,9 @@ multi_history_redo :: proc(this: ^MultiHistory, value_ptr_anys: ..any) -> (succe
 	if this.future_len == 0 do return false
 	assert(_anys_are_unique(value_ptr_anys))
 	snapshot := &this.snapshots[(this.first_past_idx + this.past_len) % this.cap]
+	when ODIN_DEBUG {
+		print("redo", snapshot.label)
+	}
 	_snapshot_swap_with_state(snapshot, _access_types(this), value_ptr_anys)
 	this.past_len += 1
 	this.future_len -= 1
@@ -225,6 +248,7 @@ _snapshot_swap_with_state :: proc(this: ^_Snapshot, types: []_Type, value_ptr_an
 		}
 		panic(tprint("no value of type", type.id, "found in the provided value_ptr_anys"))
 	}
+	// note: this.label stays the same
 }
 _SnapshotIter :: struct {
 	bit_mask: u64,
