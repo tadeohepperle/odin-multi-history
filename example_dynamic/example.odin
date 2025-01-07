@@ -51,15 +51,15 @@ positions_drop :: proc(this: ^Positions) {
 	delete(this^)
 }
 
-add_type :: history.multi_history_add_type
-snapshot :: history.multi_history_snapshot
-undo :: history.multi_history_undo
-redo :: history.multi_history_redo
+add_type :: history.dynamic_history_add_type
+snapshot :: history.dynamic_history_snapshot
+undo :: history.dynamic_history_undo
+redo :: history.dynamic_history_redo
 
 main :: proc() {
 	state: State
 	// create new history saving the last 3 snapshotted states.
-	h: history.MultiHistory = history.multi_history_create(3)
+	h := history.dynamic_history_create(3)
 	// add tracks with dedicated clone/drop functions for players and positions
 	add_type(&h, Players, players_clone, players_drop)
 	add_type(&h, Positions, positions_clone, positions_drop)

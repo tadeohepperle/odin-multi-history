@@ -5,7 +5,7 @@ State :: struct {
 	world:     enum {Asia, America, Europe},
 }
 s: State
-h: history.MultiHistory = history.multi_history_create(10)
+h: history.DynamicHistory = history.dynamic_history_create(10)
 add_type(&h, Players, players_clone, players_drop)
 add_type(&h, Positions, positions_clone, positions_drop)
 add_type(&h, World)
