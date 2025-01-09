@@ -12,6 +12,7 @@ import "base:runtime"
 // The MultiHistory supports up to 64 different types
 MAX_TYPE_COUNT :: size_of(u64) * 8
 
+DEBUG_HISTORY_OPS: bool = false
 // /////////////////////////////////////////////////////////////////////////////
 // SECTION: Semi-Static Multi History storing parts of an upfront specified Fixed Type Ptrs struct
 // /////////////////////////////////////////////////////////////////////////////
@@ -95,6 +96,14 @@ multi_history_snapshot :: proc(this: ^MultiHistory($S), ptrs: S, label: Maybe(st
 		field_ptrs,
 		label,
 	)
+	if DEBUG_HISTORY_OPS {
+		print(
+			"multi_history_snapshot",
+			label,
+			" for ",
+			_bit_mask_to_dbg_string(snapshot.bit_mask, this.struct_ty),
+		)
+	}
 	if !ok {
 		return
 	}
@@ -111,8 +120,28 @@ multi_history_undo :: proc(this: ^MultiHistory($S), ptrs: S) -> (success: bool) 
 	this.past_len -= 1
 	this.future_len += 1
 	snapshot := &this.snapshots[(this.first_past_idx + this.past_len) % this.cap]
+	if DEBUG_HISTORY_OPS {
+		print(
+			"multi_history_undo",
+			snapshot.label,
+			" for ",
+			_bit_mask_to_dbg_string(snapshot.bit_mask, this.struct_ty),
+		)
+	}
 	_snapshot_swap_with_state_field_ptrs(snapshot, _inner_types(this), field_ptrs)
 	return true
+}
+_bit_mask_to_dbg_string :: proc(bit_mask: u64, struct_ty: runtime.Type_Info_Struct) -> string {
+	sb := strings.builder_make_none(allocator = context.temp_allocator)
+	for f_idx in 0 ..< struct_ty.field_count {
+		f_bit_mask: u64 = 2 << u64(f_idx)
+		if bit_mask & f_bit_mask != 0 {
+			if len(sb.buf) != 0 {strings.write_string(&sb, ", ")}
+			ptr_ty := struct_ty.types[f_idx].variant.(runtime.Type_Info_Pointer)
+			fmt.sbprint(&sb, struct_ty.names[f_idx], ": ", ptr_ty.elem.id, sep = "")
+		}
+	}
+	return strings.to_string(sb)
 }
 // Note: call with pointers to values, e.g. multi_history_snapshot(&h, &players, &world), ptrs can be in any order, but need to be present for any type that could have been saved in snapshots
 multi_history_redo :: proc(this: ^MultiHistory($S), ptrs: S) -> (success: bool) {
@@ -123,6 +152,14 @@ multi_history_redo :: proc(this: ^MultiHistory($S), ptrs: S) -> (success: bool) 
 		assert(ptr != nil) // all ptrs should point somewhere, no nil ptrs!
 	}
 	snapshot := &this.snapshots[(this.first_past_idx + this.past_len) % this.cap]
+	if DEBUG_HISTORY_OPS {
+		print(
+			"multi_history_redo",
+			snapshot.label,
+			" for ",
+			_bit_mask_to_dbg_string(snapshot.bit_mask, this.struct_ty),
+		)
+	}
 	_snapshot_swap_with_state_field_ptrs(snapshot, _inner_types(this), field_ptrs)
 	this.past_len += 1
 	this.future_len -= 1
